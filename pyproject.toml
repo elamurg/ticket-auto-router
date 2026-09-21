@@ -11,7 +11,11 @@ version = "0.1.0"
 description = "LLM-powered support ticket classification and routing tool"
 readme = "README.md"
 requires-python = ">=3.12"
-dependencies = []
+dependencies = [
+    "fastapi",
+    "uvicorn",
+    "psycopg[binary]",
+]
 
 [project.optional-dependencies]
 dev = [
