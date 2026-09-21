@@ -21,3 +21,5 @@ htmlcov/
 .idea/
 .vscode/
 *.egg-info/
+build/
+dist/
