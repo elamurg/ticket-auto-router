@@ -1,4 +1,4 @@
-# 3 jobs: tells build system how to build the package, 
+# 3 jobs: tells build system how to build the package,
 # states project metadata and dependencies, hold [tool.xxx] section per tool
 
 [build-system]
@@ -32,4 +32,3 @@ select = ["E", "F", "I", "B", "UP"]
 strict = true
 python_version = "3.12"
 files = ["src"]
-
