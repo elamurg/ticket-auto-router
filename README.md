@@ -87,7 +87,7 @@ Detailed reasoning for each decision lives in [`docs/adr/`](docs/adr/).
 
 ### Prerequisites
 
-- Python <!-- TODO: version, e.g. 3.12 -->
+- Python 3.12
 - Docker and Docker Compose
 - An API key for the LLM provider (optional: without one, the service falls back to non-LLM classifiers)
 
