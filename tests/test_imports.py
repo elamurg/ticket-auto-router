@@ -1,5 +1,2 @@
-from importlib import import_module
-
-
 def test_router_imports() -> None:
-    import_module("router")
+    raise AssertionError("deliberate failure to verify CI blocks a bad merge")
