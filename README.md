@@ -1,38 +1,43 @@
 # Ticket Auto-Router
 
-An LLM-powered service that classifies incoming customer support tickets and routes them to the right team queue, with measured accuracy, tracked cost, and graceful degradation when the LLM is unavailable.
+An LLM-powered service that classifies incoming customer support tickets and routes them to the right team queue, with measured accuracy, tracked cost, a human checkpoint before sensitive changes, and graceful degradation when the LLM is unavailable.
 
-> **Status:** in active development. Sections marked *pending* are filled in as each milestone lands.
+> **Status:** in active development. Sections marked *pending* are filled in as each milestone lands. The classification stage is built as a LangGraph pipeline with LangSmith tracing, deployed to GCP; see [`docs/backlog.md`](docs/backlog.md) for the full sprint plan and the reasoning behind that choice.
 
 ---
 
 ## What it does
 
-A support ticket arrives through the API. The service:
+A support ticket arrives through the API, which validates it and stores an idempotency key so a retry never creates a duplicate. From there:
 
-1. **Classifies** it into a category (billing, technical, account, complaint, other) with a confidence score.
-2. **Routes** it to a team queue using deterministic business rules, such as escalating complaints from premium customers.
-3. **Flags** low-confidence decisions for human review instead of guessing.
-4. **Persists** the ticket, the classification, the routing decision, and the cost of every LLM call.
+1. **Cleans** the text and extracts safe metadata (language, length, obviously unsafe content) before anything reaches a model.
+2. **Routes obvious cases by rule**, no model call. Genuinely ambiguous language goes to an **LLM classification node**, which can call a **lookup tool** over a runbook and prior tickets for extra context when its confidence is low.
+3. **Pauses before a sensitive change** (for example an auto-approved refund or an account closure) and waits for a human decision instead of finalizing it.
+4. **Routes** the result to a team queue using deterministic business rules, such as escalating complaints from premium customers, and **flags** low-confidence decisions for human review.
+5. **Persists** the ticket, the classification, the routing decision, the cost of every LLM call, and an audit record of what the pipeline did — which nodes ran, whether it paused, what it looked up.
 
-Classification runs through a **fallback chain**. The LLM is tried first, then an embedding-similarity classifier, then a keyword baseline. If the LLM API is down, tickets are still routed, and every response records which classifier actually answered.
+Classification runs through a **fallback chain**. The LangGraph LLM pipeline is tried first, then an embedding-similarity classifier, then a keyword baseline. If the LLM API is down, tickets are still routed, and every response records which classifier actually answered. Every pipeline run is traced in **LangSmith**, so a decision can be inspected node by node after the fact.
 
 ```mermaid
 flowchart LR
-    A[POST /tickets] --> B[Classifier chain]
-    B --> C{LLM available?}
-    C -- yes --> D[LLM classifier]
-    C -- no --> E[Semantic classifier]
-    E -. fails .-> F[Keyword baseline]
-    D --> G[decide_route]
-    E --> G
-    F --> G
-    G --> H{Confidence above threshold?}
+    A[POST /tickets] --> B[Clean + extract metadata]
+    B --> C{Rule matches?}
+    C -- yes --> G[decide_route]
+    C -- no, ambiguous --> D[LLM classification node]
+    D -. low confidence .-> L[LangChain lookup tool]
+    L --> D
+    D --> G
+    G --> S{Sensitive change?}
+    S -- yes --> P[Interrupt: pause for approval]
+    P -- approved --> Q[(PostgreSQL + audit record)]
+    S -- no --> H{Confidence above threshold?}
     H -- yes --> I[Team queue]
     H -- no --> J[Human review queue]
-    I --> K[(PostgreSQL)]
-    J --> K
+    I --> Q
+    J --> Q
 ```
+
+If the LLM is unavailable, the graph is skipped entirely and the fallback chain (semantic, then keyword) answers instead, still ending at `decide_route`.
 
 ---
 
@@ -40,17 +45,21 @@ flowchart LR
 
 **Dependencies point inward.** The code is organised in three rings:
 
-- **Core (`domain/`).** Models and routing rules. It imports nothing from the rest of the app and performs no I/O.
-- **Edges (`classification/`, `storage/`, `api/`).** The replaceable parts: classifiers, database, HTTP.
-- **Wiring (`config.py`).** Builds the object graph from settings.
+- **Core (`domain/`).** Models, routing rules, and the sensitive-change predicate. It imports nothing from the rest of the app and performs no I/O.
+- **Edges (`classification/`, `pipeline/`, `tools/`, `storage/`, `api/`).** The replaceable parts: classifiers, the LangGraph nodes and graph, the LangChain lookup tool, database, HTTP.
+- **Wiring (`config.py`, `tracing.py`).** Builds the object graph from settings; turns on LangSmith tracing when configured.
 
-**Routing is business logic, not model output.** The LLM only classifies. Which queue a ticket goes to is decided by a pure, fully tested function, so business rules can change without touching a prompt and can be verified without calling an API.
+**Routing is business logic, not model output.** The LLM only classifies. Which queue a ticket goes to, and whether a change is sensitive enough to need approval, are decided by pure, fully tested functions, so business rules can change without touching a prompt or the graph and can be verified without calling an API.
 
-**One interface for every classifier.** Each classifier implements the same `Classifier` protocol (`classify(text) -> Classification`). That single seam is what makes the fallback chain, the evaluation harness, and side-by-side comparisons possible.
+**One interface for every classifier.** Each classifier implements the same `Classifier` protocol (`classify(text) -> Classification`), including the LangGraph pipeline, which sits behind a thin adapter satisfying the same protocol. That single seam is what makes the fallback chain, the evaluation harness, and side-by-side comparisons possible.
+
+**A graph is not an excuse to skip a baseline.** The LangGraph pipeline is measured against the keyword and semantic classifiers with the same evaluation harness, not assumed to win because it's newer.
 
 **Illegal states are unrepresentable.** Domain models validate at construction. A confidence outside 0 to 1, for example, cannot exist.
 
-**Measure before adding intelligence.** A golden dataset and an evaluation harness were built before any ML, so every classifier is judged against the same baseline numbers.
+**Measure before adding intelligence.** A golden dataset and an evaluation harness were built before any ML, so every classifier — including the pipeline — is judged against the same baseline numbers.
+
+**A human confirms before an irreversible action.** The pipeline pauses on a sensitive routing decision rather than acting on it, so the LLM proposes and a person disposes for anything hard to undo.
 
 Detailed reasoning for each decision lives in [`docs/adr/`](docs/adr/).
 
@@ -64,7 +73,7 @@ Detailed reasoning for each decision lives in [`docs/adr/`](docs/adr/).
 |---|---|---|---|
 | Keyword baseline | - | - | - |
 | Semantic (all-MiniLM-L6-v2) | - | - | - |
-| LLM | - | - | - |
+| LLM (LangGraph pipeline) | - | - | - |
 | Fallback chain | - | - | - |
 
 ---
@@ -76,9 +85,11 @@ Detailed reasoning for each decision lives in [`docs/adr/`](docs/adr/).
 | API | FastAPI, Pydantic |
 | Storage | PostgreSQL, SQLAlchemy, Alembic |
 | Classification | sentence-transformers (`all-MiniLM-L6-v2`), <!-- TODO: LLM provider --> |
+| LLM pipeline | LangGraph (clean/extract, rule-first + LLM classification, interrupt), LangChain (runbook/ticket lookup tool), LangSmith (tracing, eval feedback) |
 | Testing | pytest, Testcontainers, Hypothesis |
 | Quality | ruff, mypy (strict), pre-commit |
 | Infrastructure | Docker, Docker Compose, GitHub Actions |
+| Deployment | GCP: Cloud Run, Artifact Registry, a free-tier Compute Engine VM running Postgres |
 | Load testing | <!-- TODO: k6 or Locust --> |
 
 ---
@@ -90,6 +101,8 @@ Detailed reasoning for each decision lives in [`docs/adr/`](docs/adr/).
 - Python 3.12
 - Docker and Docker Compose
 - An API key for the LLM provider (optional: without one, the service falls back to non-LLM classifiers)
+- A LangSmith API key (optional: tracing is opt-in via environment variables and the pipeline runs without it)
+- A GCP account (optional, only needed for the deployment sprint; Cloud Run and a small VM stay within the Always Free tier)
 
 ### Run with Docker
 
@@ -136,10 +149,12 @@ Reports print to the terminal and are saved to `results/<classifier>-<timestamp>
 
 | Method | Endpoint | Description |
 |---|---|---|
-| `POST` | `/tickets` | Submit a ticket; returns the routing decision. Supports an `Idempotency-Key` header. |
+| `POST` | `/tickets` | Submit a ticket; returns the routing decision, or a pending-approval status if the pipeline paused on a sensitive change. Supports an `Idempotency-Key` header. |
 | `GET` | `/tickets/{id}` | Retrieve a ticket and its decision |
 | `GET` | `/tickets?queue=&requires_human=` | List tickets by queue or review status |
 | `GET` | `/health` | Service and database health |
+
+A pending-approval ticket is resumed through the human review queue (approve/reject), which continues its paused pipeline run instead of resubmitting the ticket.
 
 ---
 
@@ -147,14 +162,17 @@ Reports print to the terminal and are saved to `results/<classifier>-<timestamp>
 
 ```
 src/router/
-├── domain/              Core: models, routing rules, domain errors
-├── classification/      Classifier protocol, keyword, semantic, LLM, fallback chain
-├── storage/             ORM tables and the ticket repository
+├── domain/              Core: models, routing rules, sensitive-change predicate, domain errors
+├── classification/      Classifier protocol, keyword, semantic, LLM (LangGraph adapter), fallback chain
+├── pipeline/            LangGraph state, nodes (clean/extract, classify, lookup, interrupt), compiled graph
+├── tools/               LangChain lookup tool (runbook / prior tickets)
+├── storage/             ORM tables, ticket repository, audit repository
 ├── api/                 Request/response schemas and endpoints
 ├── evaluation/          Golden set loader, metrics, evaluation runner
+├── tracing.py           LangSmith wiring
 └── config.py            Settings and object wiring
 data/                    Golden dataset
-docs/                    Evaluation writeups, performance results, ADRs
+docs/                    Evaluation writeups, performance results, ADRs, GCP teardown runbook
 tests/
 ```
 
@@ -162,13 +180,15 @@ tests/
 
 ## Roadmap
 
-- [ ] Tooling, containerised environment, CI gate on `main`
+- [x] Tooling, containerised environment
+- [ ] CI gate on `main`
 - [ ] Domain models, routing rules, keyword baseline
 - [ ] Golden dataset, metrics, evaluation runner
 - [ ] Semantic classifier and comparison against baseline
-- [ ] LLM classifier with retries, timeouts, cost tracking, fallback chain
-- [ ] Persistence, REST API, idempotency, structured logging
-- [ ] Human review queue, circuit breaker, property-based tests, load testing
+- [ ] LangGraph pipeline: clean/extract node, rule-first + LLM classification, LangChain lookup tool, cost tracking and LangSmith tracing, interrupt before sensitive changes, fallback chain
+- [ ] Persistence (including audit records), REST API, idempotency, structured logging
+- [ ] Human review queue and interrupt resumption, circuit breaker, property-based tests, load testing
+- [ ] GCP deployment: IAM and secrets, Postgres on a free-tier VM, Cloud Run, CI/CD to Cloud Run, cost teardown
 
 ---
 
