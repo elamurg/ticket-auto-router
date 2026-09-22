@@ -101,6 +101,17 @@ class TestRoutingDecision:
         assert decision.queue == "billing_queue"
         assert isinstance(decision.decided_at, datetime)
 
+    def test_routing_decision_confidence_defaults_to_none(self) -> None:
+        decision = RoutingDecision(
+            ticket_id=uuid4(),
+            category=Category.BILLING,
+            queue="billing_queue",
+            priority=Priority.LOW,
+            requires_human=True,
+        )
+
+        assert decision.classification_confidence is None
+
     def test_empty_queue(self) -> None:
         """Verify min_length=1 on queue name."""
         with pytest.raises(ValidationError):
