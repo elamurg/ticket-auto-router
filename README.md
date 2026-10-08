@@ -67,7 +67,7 @@ Detailed reasoning for each decision lives in [`docs/adr/`](docs/adr/).
 
 ## Evaluation
 
-*Pending.* Results are produced by the evaluation runner against a hand-labelled golden set of support tickets, including ambiguous and edge cases. Labelling decisions are documented in [`docs/evaluation.md`](docs/evaluation.md).
+*Pending, runner not yet built.* Results will be produced by the evaluation runner (Sprint 2) against a hand-labelled golden set of 145 support tickets, 96 clear-cut, 28 deliberately ambiguous, 21 edge cases, spanning all five categories (`BILLING` 32, `TECHNICAL` 36, `ACCOUNT` 28, `COMPLAINT` 19, `OTHER` 30). Every label was decided by a documented rule, not intuition: see [`data/LABELGUIDE.md`](data/LABELGUIDE.md) for the category definitions, the decision order, every judgement call recorded with its reasoning, what each edge case tests, and this dataset's known weaknesses (invented text, one labeller, a deliberately varied rather than observed distribution).
 
 | Classifier | Accuracy | p50 latency | Cost per 1,000 tickets |
 |---|---|---|---|
@@ -171,7 +171,9 @@ src/router/
 ├── evaluation/          Golden set loader, metrics, evaluation runner
 ├── tracing.py           LangSmith wiring
 └── config.py            Settings and object wiring
-data/                    Golden dataset
+data/
+├── golden.jsonl         Hand-labelled golden set (145 tickets, text + category + rationale)
+└── LABELGUIDE.md        How every label was decided; the rules, not just the answers
 docs/                    Evaluation writeups, performance results, ADRs, GCP teardown runbook
 tests/
 ```
@@ -181,9 +183,9 @@ tests/
 ## Roadmap
 
 - [x] Tooling, containerised environment
-- [ ] CI gate on `main`
-- [ ] Domain models, routing rules, keyword baseline
-- [ ] Golden dataset, metrics, evaluation runner
+- [x] CI gate on `main`
+- [x] Domain models, routing rules, keyword baseline
+- [ ] Golden dataset, metrics, evaluation runner (dataset and labelling guide done, metrics module and runner still open)
 - [ ] Semantic classifier and comparison against baseline
 - [ ] LangGraph pipeline: clean/extract node, rule-first + LLM classification, LangChain lookup tool, cost tracking and LangSmith tracing, interrupt before sensitive changes, fallback chain
 - [ ] Persistence (including audit records), REST API, idempotency, structured logging
