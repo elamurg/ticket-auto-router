@@ -1,0 +1,68 @@
+{
+  "classifier": "semantic",
+  "num_tickets": 145,
+  "accuracy": 0.7241379310344828,
+  "confusion_matrix": {
+    "BILLING": {
+      "BILLING": 28,
+      "TECHNICAL": 1,
+      "ACCOUNT": 1,
+      "COMPLAINT": 0,
+      "OTHER": 2
+    },
+    "TECHNICAL": {
+      "BILLING": 1,
+      "TECHNICAL": 26,
+      "ACCOUNT": 5,
+      "COMPLAINT": 4,
+      "OTHER": 0
+    },
+    "ACCOUNT": {
+      "BILLING": 3,
+      "TECHNICAL": 0,
+      "ACCOUNT": 22,
+      "COMPLAINT": 0,
+      "OTHER": 3
+    },
+    "COMPLAINT": {
+      "BILLING": 6,
+      "TECHNICAL": 1,
+      "ACCOUNT": 0,
+      "COMPLAINT": 12,
+      "OTHER": 0
+    },
+    "OTHER": {
+      "BILLING": 5,
+      "TECHNICAL": 0,
+      "ACCOUNT": 3,
+      "COMPLAINT": 5,
+      "OTHER": 17
+    }
+  },
+  "precision_recall_per_class": {
+    "BILLING": {
+      "precision": 0.6511627906976745,
+      "recall": 0.875
+    },
+    "TECHNICAL": {
+      "precision": 0.9285714285714286,
+      "recall": 0.7222222222222222
+    },
+    "ACCOUNT": {
+      "precision": 0.7096774193548387,
+      "recall": 0.7857142857142857
+    },
+    "COMPLAINT": {
+      "precision": 0.5714285714285714,
+      "recall": 0.631578947368421
+    },
+    "OTHER": {
+      "precision": 0.7727272727272727,
+      "recall": 0.5666666666666667
+    }
+  },
+  "confidence_by_correctness": {
+    "mean_confidence_correct": 0.7279364120392572,
+    "mean_confidence_incorrect": 0.2971376536414027
+  }
+}
