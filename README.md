@@ -67,12 +67,12 @@ Detailed reasoning for each decision lives in [`docs/adr/`](docs/adr/).
 
 ## Evaluation
 
-*Pending, runner not yet built.* Results will be produced by the evaluation runner (Sprint 2) against a hand-labelled golden set of 145 support tickets, 96 clear-cut, 28 deliberately ambiguous, 21 edge cases, spanning all five categories (`BILLING` 32, `TECHNICAL` 36, `ACCOUNT` 28, `COMPLAINT` 19, `OTHER` 30). Every label was decided by a documented rule, not intuition: see [`data/LABELGUIDE.md`](data/LABELGUIDE.md) for the category definitions, the decision order, every judgement call recorded with its reasoning, what each edge case tests, and this dataset's known weaknesses (invented text, one labeller, a deliberately varied rather than observed distribution).
+Produced by `python -m router.evaluation.runner --classifier <name>` against the hand-labelled golden set of 145 support tickets, 96 clear-cut, 28 deliberately ambiguous, 21 edge cases, spanning all five categories (`BILLING` 32, `TECHNICAL` 36, `ACCOUNT` 28, `COMPLAINT` 19, `OTHER` 30). Every label was decided by a documented rule, not intuition: see [`data/LABELGUIDE.md`](data/LABELGUIDE.md). Full reports, including the per-category confusion matrix and the mean-confidence calibration check, are in [`results/`](results/); the comparison writeup is in [`docs/evaluation.md`](docs/evaluation.md).
 
 | Classifier | Accuracy | p50 latency | Cost per 1,000 tickets |
 |---|---|---|---|
-| Keyword baseline | - | - | - |
-| Semantic (all-MiniLM-L6-v2) | - | - | - |
+| Keyword baseline | 50.3% | <0.01ms | $0 |
+| Semantic (all-MiniLM-L6-v2) | 72.4% | ~7.2ms | $0 |
 | LLM (LangGraph pipeline) | - | - | - |
 | Fallback chain | - | - | - |
 
@@ -137,6 +137,7 @@ pytest                # tests (integration tests need Docker running)
 
 ```bash
 python -m router.evaluation.runner --classifier keyword
+python -m router.evaluation.runner --classifier semantic
 ```
 
 Reports print to the terminal and are saved to `results/<classifier>-<timestamp>.json`.
@@ -175,6 +176,8 @@ data/
 ├── golden.jsonl         Hand-labelled golden set (145 tickets, text + category + rationale)
 └── LABELGUIDE.md        How every label was decided; the rules, not just the answers
 docs/                    Evaluation writeups, performance results, ADRs, GCP teardown runbook
+results/                 Evaluation runner output, one JSON report per run, committed as the
+                         historical record backing the Evaluation table's numbers
 tests/
 ```
 
@@ -185,8 +188,8 @@ tests/
 - [x] Tooling, containerised environment
 - [x] CI gate on `main`
 - [x] Domain models, routing rules, keyword baseline
-- [ ] Golden dataset, metrics, evaluation runner (dataset and labelling guide done, metrics module and runner still open)
-- [ ] Semantic classifier and comparison against baseline
+- [x] Golden dataset, metrics, evaluation runner
+- [x] Semantic classifier and comparison against baseline
 - [ ] LangGraph pipeline: clean/extract node, rule-first + LLM classification, LangChain lookup tool, cost tracking and LangSmith tracing, interrupt before sensitive changes, fallback chain
 - [ ] Persistence (including audit records), REST API, idempotency, structured logging
 - [ ] Human review queue and interrupt resumption, circuit breaker, property-based tests, load testing
